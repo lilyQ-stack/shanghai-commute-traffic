@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from test_baidu_traffic import around
+from bus_context import get_bus_context
 
 BJT = timezone(timedelta(hours=8))
 now = datetime.now(BJT)
@@ -35,7 +36,8 @@ for name, lat, lng, radius in targets:
         item["error_type"] = type(exc).__name__  # Never log URLs, secrets, exception details
     records.append(item)
 payload = {"timestamp_beijing": now.isoformat(), "school_day_verified": False,
-           "candidate_coordinates_not_surveyed": True, "snapshots": records}
+           "candidate_coordinates_not_surveyed": True, "snapshots": records,
+           "bus_context": get_bus_context(now)}
 path = out / (now.strftime("%Y-%m-%d_%H-%M-%S") + ".json")
 path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 print("Saved snapshot:", path.name, "targets:", len(records))
