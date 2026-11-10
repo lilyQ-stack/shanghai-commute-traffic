@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from test_baidu_traffic import around
 from bus_context import get_bus_context
+from bus_passage_analysis import build_analysis
 
 BJT = timezone(timedelta(hours=8))
 now = datetime.now(BJT)
@@ -38,6 +39,11 @@ for name, lat, lng, radius in targets:
 payload = {"timestamp_beijing": now.isoformat(), "school_day_verified": False,
            "candidate_coordinates_not_surveyed": True, "snapshots": records,
            "bus_context": get_bus_context(now)}
+try:
+    payload["bus_passage_analysis"] = build_analysis(payload, now)
+except Exception as exc:
+    # Never let optional bus analysis prevent saving core Baidu traffic data.
+    payload["bus_passage_analysis"] = {"status": "unavailable", "error_type": type(exc).__name__}
 path = out / (now.strftime("%Y-%m-%d_%H-%M-%S") + ".json")
 path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 print("Saved snapshot:", path.name, "targets:", len(records))
