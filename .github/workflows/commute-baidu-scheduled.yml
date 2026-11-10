@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: commute-baidu-snapshots
   cancel-in-progress: false
@@ -15,6 +16,7 @@ jobs:
       - name: Collect isolated traffic snapshot
         env:
           BAIDU_MAP_AK: ${{ secrets.BAIDU_MAP_AK }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: python3 commute-monitor/collect_traffic_snapshot.py
       - name: Preserve snapshot as workflow artifact
         if: always()
