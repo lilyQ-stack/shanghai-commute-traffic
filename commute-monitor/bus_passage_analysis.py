@@ -1,4 +1,4 @@
-"""Conservative vehicle progression from historical traffic-workflow artifacts.
+"""Conservative vehicle progression from the original SHMAAS daily JSONL archive.
 
 SHMAAS provides predicted arrival and remaining stops, not continuous GPS.
 This module never writes to the source bus repository.
