@@ -196,7 +196,8 @@ def build_analysis(current, now):
     prior, status = load_bus_day_history(now)
     result = analyze_bus_progress(current, prior)
     result["history_lookup_status"] = status
-    result["history_source"] = "shanghai-bus-operations/data/shmaas/daily-jsonl"\n    result["prior_bus_archive_sample_count"] = len(prior)
+    result["history_source"] = "shanghai-bus-operations/data/shmaas/daily-jsonl"
+    result["prior_bus_archive_sample_count"] = len(prior)
     if status != "ok" and result["status"] == "insufficient_unique_bus_samples":
         result["status"] = "history_unavailable"
     return result
