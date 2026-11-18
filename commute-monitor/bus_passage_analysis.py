@@ -3,12 +3,10 @@
 SHMAAS provides predicted arrival and remaining stops, not continuous GPS.
 This module never writes to the source bus repository.
 """
-import io
 import json
-import os
 import statistics
+import urllib.parse
 import urllib.request
-import zipfile
 from datetime import datetime, timedelta, timezone
 
 BJT = timezone(timedelta(hours=8))
@@ -141,69 +139,64 @@ def analyze_bus_progress(current, history):
     )
 
 
-def _api_json(url, token):
-    req = urllib.request.Request(url, headers={
-        "Accept": "application/vnd.github+json",
-        "Authorization": "Bearer " + token,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "shanghai-commute-traffic/1.0",
-    })
-    with urllib.request.urlopen(req, timeout=8) as response:
-        return json.load(response)
+def load_bus_day_history(now):
+    """Fetch SHMAAS's existing daily JSONL archive, read-only.
 
-
-def _artifact_record(url, token):
-    req = urllib.request.Request(url, headers={
-        "Authorization": "Bearer " + token,
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "shanghai-commute-traffic/1.0",
-    })
-    with urllib.request.urlopen(req, timeout=10) as response:
-        blob = response.read(2_000_001)
-    if len(blob) > 2_000_000:
-        return None
-    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
-        names = [name for name in archive.namelist()
-                 if name.endswith(".json") and not name.startswith("__MACOSX/")]
-        if len(names) != 1 or archive.getinfo(names[0]).file_size > 1_000_000:
-            return None
-        return json.loads(archive.read(names[0]))
-
-
-def load_prior_snapshots(now):
-    """Best-effort history from artifacts in THIS repo, never from the bus repo."""
-    token = os.getenv("GITHUB_TOKEN", "").strip()
-    repo = os.getenv("GITHUB_REPOSITORY", "").strip()
-    if not token or repo != "lilyQ-stack/shanghai-commute-traffic":
-        return [], "not_configured"
+    A public archive contains genuine samples at about ten-minute intervals.
+    This avoids the fragile cross-run GitHub Actions artifact downloader.
+    """
+    filename = now.strftime("%Y-%m-%d") + "-" + urllib.parse.quote("浦东35路") + ".jsonl"
+    url = (
+        "https://raw.githubusercontent.com/lilyQ-stack/shanghai-bus-operations/"
+        "main/data/shmaas/" + filename
+    )
     try:
-        data = _api_json(f"https://api.github.com/repos/{repo}/actions/artifacts?per_page=40", token)
-        candidates = []
-        for artifact in data.get("artifacts", []):
-            if artifact.get("expired") or not str(artifact.get("name", "")).startswith("baidu-traffic-"):
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "shanghai-commute-traffic/1.0",
+                          "Cache-Control": "no-cache"}
+        )
+        with urllib.request.urlopen(req, timeout=12) as response:
+            data = response.read(8_000_001)
+        if len(data) > 8_000_000:
+            return [], "source_archive_too_large"
+
+        cutoff = now - timedelta(minutes=90)
+        history = []
+        for line in data.decode("utf-8-sig").splitlines():
+            if not line.strip():
                 continue
-            created = _time(artifact.get("created_at"))
-            if created is None or created.date() != now.date() or created > now:
-                continue
-            candidates.append(artifact)
-        prior = []
-        for artifact in candidates[:8]:
             try:
-                record = _artifact_record(artifact["archive_download_url"], token)
-                if isinstance(record, dict):
-                    prior.append(record)
-            except Exception:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                # Ignore a partially-written final line or other bad record.
                 continue
-        return prior, "ok"
+            if (not isinstance(record, dict)
+                    or record.get("route") != "浦东35路"
+                    or record.get("success") is not True):
+                continue
+            sample_time = _time(record.get("sample_time_cst"))
+            if (sample_time is None or sample_time.date() != now.date()
+                    or sample_time < cutoff or sample_time > now):
+                continue
+            history.append({
+                "timestamp_beijing": sample_time.isoformat(),
+                "bus_context": {
+                    "status": "ok",
+                    "sample_time_cst": sample_time.isoformat(),
+                    "vehicles": record.get("vehicles") or [],
+                },
+            })
+        return history, "ok" if history else "no_recent_source_samples"
     except Exception as exc:
-        return [], "history_unavailable:" + type(exc).__name__
+        # Only log exception type; never log request URLs or credential data.
+        return [], "source_unavailable:" + type(exc).__name__
 
 
 def build_analysis(current, now):
-    prior, status = load_prior_snapshots(now)
+    prior, status = load_bus_day_history(now)
     result = analyze_bus_progress(current, prior)
     result["history_lookup_status"] = status
-    result["prior_traffic_snapshot_count"] = len(prior)
+    result["history_source"] = "shanghai-bus-operations/data/shmaas/daily-jsonl"\n    result["prior_bus_archive_sample_count"] = len(prior)
     if status != "ok" and result["status"] == "insufficient_unique_bus_samples":
         result["status"] = "history_unavailable"
     return result
