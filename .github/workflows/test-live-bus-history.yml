@@ -1,0 +1,35 @@
+name: Verify Live SHMAAS Archive Reader
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/test-live-bus-history.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-public-bus-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify actual historical observations without changing source repository
+        run: |
+          python3 - <<'PY'
+          import sys
+          from datetime import datetime, timedelta, timezone
+          sys.path.insert(0, "commute-monitor")
+          from bus_passage_analysis import load_bus_day_history, analyze_bus_progress
+
+          now = datetime.now(timezone(timedelta(hours=8)))
+          records, status = load_bus_day_history(now)
+          print("Source status:", status, "Historical records:", len(records))
+          if status != "ok" or len(records) < 2:
+              raise SystemExit("Could not read at least two original bus-history samples")
+          result = analyze_bus_progress(records[-1], records[:-1])
+          print("Unique samples:", result["unique_bus_sample_count"])
+          print("Trackable plates:", result["trackable_plate_count"])
+          print("Coarse movements:", len(result["recent_movements"]))
+          if result["unique_bus_sample_count"] < 2:
+              raise SystemExit("Archive samples failed vehicle-history analysis")
+          PY
