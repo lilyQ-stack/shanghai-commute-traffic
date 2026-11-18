@@ -1,0 +1,45 @@
+name: Verify Pudong 35 Historical Tracking
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-bus-tracking.yml'
+      - 'commute-monitor/bus_passage_analysis.py'
+      - 'tests/test_bus_archive_loader.py'
+      - 'tests/test_bus_passage_analysis.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests
+        run: python3 -m unittest discover -s tests -p 'test_bus_*.py' -v
+      - name: Replay actual November 18 morning archive (read-only)
+        run: |
+          python3 - <<'PY'
+          import sys
+          from datetime import datetime
+          sys.path.insert(0, 'commute-monitor')
+          from bus_passage_analysis import load_bus_day_history, analyze_bus_progress
+          now = datetime.fromisoformat('2026-11-18T06:55:30+08:00')
+          history, status = load_bus_day_history(now)
+          print('archive_status:', status, 'archive_samples:', len(history))
+          assert status == 'ok', status
+          result = analyze_bus_progress(
+              {'timestamp_beijing': now.isoformat(), 'bus_context': {'status': 'stale'}},
+              history,
+          )
+          print('unique_samples:', result.get('unique_bus_sample_count'))
+          print('trackable_plates:', result.get('trackable_plate_count'))
+          print('observed_movements:', len(result.get('recent_movements', [])))
+          assert result['unique_bus_sample_count'] >= 3
+          assert result['trackable_plate_count'] >= 1
+          assert len(result['recent_movements']) >= 1
+          PY
