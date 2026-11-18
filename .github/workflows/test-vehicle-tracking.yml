@@ -1,0 +1,19 @@
+name: Test Vehicle Tracking
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'commute-monitor/bus_passage_analysis.py'
+      - 'tests/**'
+      - '.github/workflows/test-vehicle-tracking.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated vehicle-tracking regression tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
